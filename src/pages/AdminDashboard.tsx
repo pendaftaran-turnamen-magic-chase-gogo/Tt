@@ -11,8 +11,7 @@ import { Transaction, LossRecord, Product, StoreSettings, StoreContent, Testimon
 import { ADMIN_CREDENTIALS, COUNTRY_CODES } from '../constants';
 import { formatCurrency, compressImage } from '../utils';
 import JSZip from 'jszip';
-// Pastikan file ini ada, atau hapus import ini jika tidak digunakan
-import { PROJECT_FILES } from '../source_code_data'; 
+import { PROJECT_FILES } from '../source_code_data';
 
 declare global {
   interface Window {
@@ -55,30 +54,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   
   const [toast, setToast] = useState<{msg: string, type: 'success' | 'error'} | null>(null);
 
-  // Modals
   const [showLossModal, setShowLossModal] = useState(false);
   const [lossForm, setLossForm] = useState({ amt: '', desc: '' });
   const [showProductModal, setShowProductModal] = useState(false);
   
-  // Product Edit
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [productForm, setProductForm] = useState({ name: '', desc: '', price: '', img: '', qrisUrl: '' });
   const [isUploadingProductImg, setIsUploadingProductImg] = useState(false);
 
-  // Settings
   const [settingsForm, setSettingsForm] = useState<StoreSettings>(settings);
   const [waCountry, setWaCountry] = useState(COUNTRY_CODES[0]);
   const [waNumber, setWaNumber] = useState('');
   const [isCountryPickerOpen, setIsCountryPickerOpen] = useState(false);
   const [searchCountry, setSearchCountry] = useState('');
 
-  // --- CONTENT STATES ---
   const [testimonials, setTestimonials] = useState<Testimonial[]>(content.testimonials || []);
   const [gallery, setGallery] = useState<GalleryItem[]>(content.gallery || []);
   const [faqs, setFaqs] = useState<FaqItem[]>(content.faqs || []);
   const [infos, setInfos] = useState<InfoSection[]>(content.infos || []);
 
-  // Content Modals
   const [showTestiModal, setShowTestiModal] = useState(false);
   const [testiForm, setTestiForm] = useState<Partial<Testimonial>>({ rating: 5 });
   
@@ -96,7 +90,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     c.code.includes(searchCountry)
   );
 
-  // Update local state when props from Firebase change
   useEffect(() => {
     if (settings) {
         setSettingsForm(settings);
@@ -137,7 +130,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   }, []);
 
   const stats = useMemo(() => {
-    const confirmed = historyTransactions.filter(t => t.status === 'completed' || t.status === 'confirmed');
+    // FIX: Pastikan status 'completed' ada di type atau gunakan yang valid
+    const confirmed = historyTransactions.filter(t => t.status === 'completed' || t.status === 'confirmed' || t.status === 'paid');
     const revenue = confirmed.reduce((sum, t) => sum + (t.total), 0);
     const totalItems = confirmed.reduce((sum, t) => sum + t.items.reduce((s, i) => s + i.qty, 0), 0);
     const totalLoss = losses.reduce((sum, l) => sum + l.amount, 0);
@@ -175,6 +169,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setPass('');
   };
 
+  const showToast = (msg: string, type: 'success' | 'error') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
   const handleAction = (e: React.MouseEvent, id: string, status: 'confirmed' | 'rejected') => {
       e.preventDefault();
       e.stopPropagation();
@@ -194,12 +193,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setIsGlobalLoading(false);
   }
 
-  const showToast = (msg: string, type: 'success' | 'error') => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
-  };
-
-  // --- PRODUCT LOGIC ---
   const openProductModal = (product: Product | null = null) => {
       setEditingProduct(product);
       if (product) {
@@ -237,7 +230,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           const newId = Math.max(...products.map(p => p.id), 0) + 1;
           newProducts.push({ id: newId, ...productForm, price });
       }
-      // Kirim data baru ke Firebase via props
       saveProducts(newProducts);
       
       setIsGlobalLoading(false);
@@ -250,7 +242,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
   };
 
-  // --- SETTINGS LOGIC ---
   const handleWaNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       let val = e.target.value.replace(/\D/g, ''); 
       if (val.startsWith('0')) val = val.substring(1); 
@@ -270,7 +261,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleSaveSettings = async () => {
       if (!settingsForm.storeName || !settingsForm.whatsapp) return alert("Nama Toko & WA Wajib diisi!");
       setIsGlobalLoading(true);
-      // Kirim ke Firebase via props
       saveSettings(settingsForm);
       setIsGlobalLoading(false);
       showToast('Pengaturan Berhasil Disimpan!', 'success');
@@ -291,14 +281,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleAddLoss = async () => {
       if(!lossForm.amt || !lossForm.desc) return alert('Data tidak lengkap!');
       setIsGlobalLoading(true);
-      // Kirim ke Firebase via props
       addLoss({ id: `LOSS-${Date.now()}`, amount: Number(lossForm.amt), description: lossForm.desc, timestamp: Date.now() });
       setIsGlobalLoading(false);
       setShowLossModal(false); 
       setLossForm({ amt: '', desc: '' });
   };
 
-  // --- CONTENT FUNCTIONS ---
   const calculateRating = (items: Testimonial[]) => {
       if (items.length === 0) return 5.0;
       const sum = items.reduce((a, b) => a + b.rating, 0);
@@ -411,17 +399,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       saveContent({ ...content, infos: infos.filter(i => i.id !== id) });
   };
 
-  // --- DOWNLOAD SOURCE CODE (ZIP) ---
   const handleDownloadSource = async () => {
     setIsZipping(true);
     try {
       const zip = new JSZip();
-      
-      // Menggunakan data dari import PROJECT_FILES
       Object.entries(PROJECT_FILES).forEach(([filename, content]) => {
         zip.file(filename, content as string);
       });
-      
       const blob = await zip.generateAsync({type:"blob"});
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -593,11 +577,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                             <span className="text-slate-400 text-xs font-bold flex items-center gap-1"><Clock size={12}/> {new Date(t.timestamp).toLocaleString()}</span>
                                         </div>
                                         <h3 className="font-black text-xl text-slate-800">{t.customer.name}</h3>
-                                        <p className="text-slate-500 text-sm">{t.customer.whatsapp}</p>
+                                        <p className="text-slate-500 text-sm">{t.customer.wa}</p>
                                     </div>
                                     <div className="text-right">
                                         <p className="text-2xl font-black text-rose-600">{formatCurrency(t.total)}</p>
-                                        <p className="text-xs text-slate-400 font-bold">Via {t.paymentMethod.toUpperCase()}</p>
+                                        <p className="text-xs text-slate-400 font-bold">Via {t.type.toUpperCase()}</p>
                                     </div>
                                 </div>
                                 
@@ -611,11 +595,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     ))}
                                 </div>
                                 
-                                {t.proof && (
+                                {t.proofUrl && (
                                     <div className="mb-4">
                                         <p className="text-xs font-bold text-slate-400 mb-2">BUKTI BAYAR:</p>
-                                        <a href={t.proof} target="_blank" rel="noreferrer" className="block w-full h-32 bg-slate-100 rounded-xl overflow-hidden relative group">
-                                            <img src={t.proof} className="w-full h-full object-cover" alt="Bukti"/>
+                                        <a href={t.proofUrl} target="_blank" rel="noreferrer" className="block w-full h-32 bg-slate-100 rounded-xl overflow-hidden relative group">
+                                            <img src={t.proofUrl} className="w-full h-full object-cover" alt="Bukti"/>
                                             <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                                 <Eye className="text-white"/>
                                             </div>
