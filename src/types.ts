@@ -1,5 +1,6 @@
 export type PaymentType = 'cash' | 'qris';
-export type OrderStatus = 'pending' | 'confirmed' | 'rejected' | 'cancelled';
+// Tambahkan 'completed' agar tidak error saat AdminDashboard mengecek status tersebut
+export type OrderStatus = 'pending' | 'confirmed' | 'rejected' | 'cancelled' | 'paid' | 'completed';
 
 export interface OrderItem {
   id: number;
@@ -10,7 +11,7 @@ export interface OrderItem {
 
 export interface Customer {
   name: string;
-  wa: string;
+  wa: string; // Menggunakan 'wa', bukan 'whatsapp'
   address: string;
   lat?: number;
   lng?: number;
@@ -18,14 +19,14 @@ export interface Customer {
 
 export interface Transaction {
   id: string;
-  type: PaymentType;
+  type: PaymentType; // Menggunakan 'type', bukan 'paymentMethod'
   customer: Customer;
   items: OrderItem[];
   total: number;
   fee: number;
   status: OrderStatus;
   timestamp: number;
-  proofUrl?: string; // Base64 of the uploaded proof
+  proofUrl?: string; // Menggunakan 'proofUrl', bukan 'proof'
 }
 
 export interface LossRecord {
@@ -44,17 +45,15 @@ export interface Product {
   qrisUrl?: string;
 }
 
-// --- NEW CONTENT TYPES ---
-
 export interface Testimonial {
   id: string;
   name: string;
-  email?: string; // Added
-  phone?: string; // Added
+  email?: string;
+  phone?: string;
   text: string;
-  rating: number; // 1 - 5
-  img?: string; // Base64 image user/staff
-  role?: string; // e.g. "Pelanggan Setia"
+  rating: number;
+  img?: string;
+  role?: string;
   timestamp?: number;
 }
 
@@ -74,7 +73,7 @@ export interface InfoSection {
   id: string;
   title: string;
   content: string;
-  icon: 'truck' | 'star' | 'info' | 'clock' | 'shield'; 
+  icon: 'truck' | 'star' | 'info' | 'clock' | 'shield';
   isActive: boolean;
 }
 
@@ -83,7 +82,7 @@ export interface StoreContent {
   gallery: GalleryItem[];
   faqs: FaqItem[];
   infos: InfoSection[];
-  shopRating: number; // Calculated average
+  shopRating: number;
 }
 
 export interface StoreSettings {
