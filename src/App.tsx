@@ -1,17 +1,16 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import ShopPage from './pages/ShopPage';
 import AdminDashboard from './pages/AdminDashboard';
-import { Transaction, LossRecord, Product, StoreSettings, StoreContent, Testimonial } from './types';
+import { Transaction, LossRecord, Product, StoreSettings, StoreContent } from './types';
 import { PRODUCTS } from './constants';
 
 // Firebase Imports
 import { db } from './firebase';
-import { ref, onValue, set, update, remove } from 'firebase/database';
+import { ref, onValue, set, update, remove, push } from 'firebase/database';
 
 const notificationSound = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
 
-// Default Data untuk Inisialisasi State Awal
 const DEFAULT_SETTINGS: StoreSettings = {
   storeName: 'TOKOTOPARYA', 
   whatsapp: '628123456789', 
@@ -24,7 +23,6 @@ const DEFAULT_CONTENT: StoreContent = {
 };
 
 const App: React.FC = () => {
-  // --- STATE UTAMA (Disinkronkan dengan Firebase) ---
   const [storeData, setStoreData] = useState<{
       active: Transaction[];
       history: Transaction[];
@@ -32,158 +30,69 @@ const App: React.FC = () => {
       products: Product[];
       settings: StoreSettings;
       content: StoreContent;
-  }>({
+  }>(({
       active: [],
       history: [],
       losses: [],
       products: PRODUCTS,
       settings: DEFAULT_SETTINGS,
       content: DEFAULT_CONTENT
-  });
+  }));
 
-  const prevTxCountRef = useRef(0);
-  const isFirstLoad = useRef(true);
-
-  // --- FIREBASE REAL-TIME LISTENER ---
+  // --- SYNC REAL-TIME DENGAN FIREBASE ---
   useEffect(() => {
     const dbRef = ref(db);
-    
-    // Fungsi ini akan berjalan setiap kali ada perubahan data di Firebase (Real-time)
     const unsubscribe = onValue(dbRef, (snapshot) => {
       const data = snapshot.val();
-
       if (data) {
-        // Konversi Data Object dari Firebase ke Array untuk UI
-        // Firebase menyimpan array sebagai object {key: val}, kita perlu Object.values
-        
-        const activeArr = data.transactions ? Object.values(data.transactions) as Transaction[] : [];
-        activeArr.sort((a, b) => b.timestamp - a.timestamp); // Urutkan terbaru
-
-        const historyArr = data.history ? Object.values(data.history) as Transaction[] : [];
-        historyArr.sort((a, b) => b.timestamp - a.timestamp);
-
-        const lossesArr = data.losses ? Object.values(data.losses) as LossRecord[] : [];
-        lossesArr.sort((a, b) => b.timestamp - a.timestamp);
-        
-        // Produk bisa array atau object tergantung history save
-        let productsArr: Product[] = PRODUCTS;
-        if (data.products) {
-            productsArr = Array.isArray(data.products) ? data.products : Object.values(data.products);
-        }
-        
-        const settingsObj = data.settings || DEFAULT_SETTINGS;
-        const contentObj = data.content || DEFAULT_CONTENT;
-
-        // Notifikasi Suara jika ada order baru masuk (Real-time)
-        if (!isFirstLoad.current && activeArr.length > prevTxCountRef.current) {
-             notificationSound.currentTime = 0;
-             notificationSound.play().catch(() => {});
-        }
-        
-        prevTxCountRef.current = activeArr.length;
-        isFirstLoad.current = false;
-
-        // Update State Aplikasi
         setStoreData({
-            active: activeArr,
-            history: historyArr,
-            losses: lossesArr,
-            products: productsArr,
-            settings: settingsObj,
-            content: contentObj
+          active: data.active ? Object.values(data.active) : [],
+          history: data.history ? Object.values(data.history) : [],
+          losses: data.losses ? Object.values(data.losses) : [],
+          products: data.products || PRODUCTS,
+          settings: data.settings || DEFAULT_SETTINGS,
+          content: data.content || DEFAULT_CONTENT
         });
+        
+        // Bunyi notifikasi jika ada pesanan baru di list active
+        if (data.active && Object.keys(data.active).length > storeData.active.length) {
+            notificationSound.play().catch(() => {});
+        }
       }
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [storeData.active.length]);
 
-
-  // ============================================================
-  // 🟢 FUNGSI CRUD KE FIREBASE
-  // ============================================================
-
-  const addTransaction = (tx: Transaction) => {
-      // Simpan langsung ke path transactions/{id}
-      set(ref(db, `transactions/${tx.id}`), tx);
+  // --- ACTIONS (Kirim ke Firebase) ---
+  const addTransaction = (trx: Transaction) => {
+    // Menggunakan set dengan ID spesifik dari trx.id agar real-time
+    set(ref(db, `active/${trx.id}`), trx);
   };
 
-  const updateTransactionStatus = (id: string, status: 'confirmed' | 'rejected' | 'cancelled') => {
-      const tx = storeData.active.find(t => t.id === id);
-      
-      if (tx) {
-          const updatedTx = { ...tx, status };
-          
-          // Atomic Update: Hapus dari 'transactions', pindah ke 'history'
-          const updates: any = {};
-          updates[`transactions/${id}`] = null;
-          updates[`history/${id}`] = updatedTx;
-          
-          update(ref(db), updates);
-      } else {
-          // Jika update status pada item yang sudah di history
-          const hTx = storeData.history.find(t => t.id === id);
-          if (hTx) {
-              update(ref(db, `history/${id}`), { status });
-          }
-      }
-  };
+  const updateTransactionStatus = (id: string, status: 'confirmed' | 'rejected') => {
+    const trx = storeData.active.find(t => t.id === id);
+    if (!trx) return;
 
-  const cancelTransaction = (id: string) => {
-      updateTransactionStatus(id, 'cancelled');
+    if (status === 'confirmed') {
+      // Pindah ke history
+      set(ref(db, `history/${id}`), { ...trx, status: 'completed' });
+      remove(ref(db, `active/${id}`));
+    } else {
+      remove(ref(db, `active/${id}`));
+    }
   };
 
   const setProof = (id: string, proofUrl: string) => {
-      // Cek apakah ada di active atau history, lalu update url bukti
-      const isActive = storeData.active.find(t => t.id === id);
-      if (isActive) {
-          update(ref(db, `transactions/${id}`), { proofUrl });
-      } else {
-          update(ref(db, `history/${id}`), { proofUrl });
-      }
-  };
-  
-  const addLoss = (loss: LossRecord) => {
-      set(ref(db, `losses/${loss.id}`), loss);
-  };
-  
-  const saveProductsFn = (newProducts: Product[]) => {
-      // Simpan array produk sebagai object key-value untuk menghindari masalah index array di Firebase
-      const productsMap: Record<string, Product> = {};
-      newProducts.forEach(p => {
-          // Pastikan ID valid
-          productsMap[`p_${p.id}`] = p;
-      });
-      set(ref(db, 'products'), productsMap);
-  };
-  
-  const saveSettingsFn = (newSettings: StoreSettings) => {
-      set(ref(db, 'settings'), newSettings);
+    update(ref(db, `active/${id}`), { proof: proofUrl, status: 'paid' });
   };
 
-  const saveContentFn = (newContent: StoreContent) => {
-      set(ref(db, 'content'), newContent);
-  }
+  const saveProductsFn = (newProducts: Product[]) => set(ref(db, 'products'), newProducts);
+  const saveSettingsFn = (s: StoreSettings) => set(ref(db, 'settings'), s);
+  const saveContentFn = (c: StoreContent) => set(ref(db, 'content'), c);
 
-  const handleAddTestimonial = (testi: Testimonial) => {
-      const currentTestimonials = [...storeData.content.testimonials, testi];
-      
-      // Hitung rating rata-rata baru
-      const totalRating = currentTestimonials.reduce((sum, item) => sum + item.rating, 0);
-      const newAverage = parseFloat((totalRating / currentTestimonials.length).toFixed(1));
-
-      const newContent: StoreContent = {
-          ...storeData.content,
-          testimonials: currentTestimonials,
-          shopRating: newAverage
-      };
-      
-      saveContentFn(newContent);
-  };
-  
   const clearAllData = () => {
-      // Hapus semua data transaksi & laporan, sisakan produk & setting
-      remove(ref(db, 'transactions'));
+      remove(ref(db, 'active'));
       remove(ref(db, 'history'));
       remove(ref(db, 'losses'));
   };
@@ -196,13 +105,15 @@ const App: React.FC = () => {
         <Route path="/" element={
           <ShopPage 
             addTransaction={addTransaction} 
-            cancelTransaction={cancelTransaction}
             allTransactions={[...storeData.active, ...storeData.history]} 
             updateProof={setProof}
             products={storeData.products}
             settings={storeData.settings}
             content={storeData.content} 
-            onAddTestimonial={handleAddTestimonial}
+            onAddTestimonial={(t) => {
+                const newList = [...storeData.content.testimonials, t];
+                saveContentFn({ ...storeData.content, testimonials: newList });
+            }}
           />
         } />
         <Route path="/admin" element={
@@ -214,7 +125,7 @@ const App: React.FC = () => {
             settings={storeData.settings}
             content={storeData.content}
             updateStatus={updateTransactionStatus}
-            addLoss={addLoss}
+            addLoss={(l) => push(ref(db, 'losses'), l)}
             saveProducts={saveProductsFn}
             saveSettings={saveSettingsFn}
             saveContent={saveContentFn}
