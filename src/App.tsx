@@ -112,14 +112,14 @@ const App: React.FC = () => {
       const tx = storeData.active.find(t => t.id === id);
       
       if (tx) {
-          // Pindahkan dari transactions -> history
           const updatedTx = { ...tx, status };
           
-          // 1. Hapus dari active
-          remove(ref(db, `transactions/${id}`));
+          // Atomic update: Hapus dari transactions, tambah ke history
+          const updates: any = {};
+          updates[`transactions/${id}`] = null;
+          updates[`history/${id}`] = updatedTx;
           
-          // 2. Tambahkan ke history
-          set(ref(db, `history/${id}`), updatedTx);
+          update(ref(db), updates);
       } else {
           // Jika update status item yang SUDAH di history (misal ralat status)
           const hTx = storeData.history.find(t => t.id === id);

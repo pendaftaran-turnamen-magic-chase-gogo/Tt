@@ -100,14 +100,6 @@ export default defineConfig({
     <script type="module" src="/src/index.tsx"></script>
 </body>
 </html>`,
-  "api.php": `<?php
-ob_start(); error_reporting(0); ini_set('display_errors', 0); header("Access-Control-Allow-Origin: *"); header("Content-Type: application/json; charset=UTF-8");
-echo json_encode(["status" => "success", "message" => "API Placeholder for Vercel"]);
-?>`,
-  "sse.php": `<?php
-error_reporting(0); header('Content-Type: text/event-stream'); header('Cache-Control: no-cache'); header('Connection: keep-alive'); header('Access-Control-Allow-Origin: *');
-echo ": heartbeat\n\n";
-?>`,
   "src/index.tsx": `import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
@@ -174,57 +166,94 @@ export const compressImage = (file: File): Promise<string> => {
     }; reader.onerror = (error) => reject(error);
   });
 };`,
-  "src/storage.ts": `import { Transaction, LossRecord, Product, StoreSettings, StoreContent } from './types';
-import { PRODUCTS } from './constants';
-const DB_KEY = 'yakult_shop_db';
-export interface DatabaseSchema { transactions: Transaction[]; history: Transaction[]; losses: LossRecord[]; products: Product[]; settings: StoreSettings; content: StoreContent; }
-const DEFAULT_CONTENT: StoreContent = { testimonials: [{ id: 't1', name: 'Budi Santoso', text: 'Pelayanan sangat cepat dan Yakultnya masih dingin segar!', rating: 5, role: 'Pelanggan' }, { id: 't2', name: 'Siti Aminah', text: 'Admin ramah, pengiriman tepat waktu.', rating: 5, role: 'Ibu Rumah Tangga' }], gallery: [], faqs: [{ id: 'f1', question: 'Berapa lama pengiriman?', answer: 'Pengiriman dilakukan instan setelah pembayaran.' }], infos: [{ id: 'i1', title: 'Pengiriman Cepat', content: 'Kami menjamin produk sampai dingin.', icon: 'truck', isActive: true }], shopRating: 5.0 };
-const DEFAULT_DB: DatabaseSchema = { transactions: [], history: [], losses: [], products: PRODUCTS, settings: { storeName: 'TOKOTOPARYA', whatsapp: '628123456789', qrisImageUrl: 'https://6981e829011752fb6df26a63.imgix.net/1001323452.jpg?w=367&h=364&ar=367%3A364', qrisTimerMinutes: 10 }, content: DEFAULT_CONTENT };
-export const getDB = (): DatabaseSchema => { try { const data = localStorage.getItem(DB_KEY); if (!data) return DEFAULT_DB; const parsed = JSON.parse(data); return { ...DEFAULT_DB, ...parsed }; } catch (e) { return DEFAULT_DB; } };
-export const saveDB = (data: DatabaseSchema) => { localStorage.setItem(DB_KEY, JSON.stringify(data)); };`,
   "src/firebase.ts": `import { initializeApp } from "firebase/app";
 import { getDatabase } from "firebase/database";
 const firebaseConfig = { apiKey: "AIzaSyDMwxKKdttuFXp9Hat8veUDJ2N-HuKqDLk", authDomain: "fir-9de8f.firebaseapp.com", databaseURL: "https://fir-9de8f-default-rtdb.asia-southeast1.firebasedatabase.app", projectId: "fir-9de8f", storageBucket: "fir-9de8f.firebasestorage.app", messagingSenderId: "549663941166", appId: "1:549663941166:android:8737a643adbfebe61cf5bf" };
 const app = initializeApp(firebaseConfig);
 export const db = getDatabase(app);`,
-  "src/App.tsx": `import React, { useState, useEffect, useRef, useCallback } from 'react';
+  "src/App.tsx": `import React, { useState, useEffect, useRef } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import ShopPage from './pages/ShopPage';
 import AdminDashboard from './pages/AdminDashboard';
 import { Transaction, LossRecord, Product, StoreSettings, StoreContent, Testimonial } from './types';
 import { PRODUCTS } from './constants';
-import { getDB, saveDB } from './storage'; 
 import { db } from './firebase';
-import { ref, onValue, set, update, remove, push } from 'firebase/database';
+import { ref, onValue, set, update, remove } from 'firebase/database';
 
 const notificationSound = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+const DEFAULT_SETTINGS: StoreSettings = { storeName: 'TOKOTOPARYA', whatsapp: '628123456789', qrisImageUrl: '', qrisTimerMinutes: 10 };
+const DEFAULT_CONTENT: StoreContent = { testimonials: [], gallery: [], faqs: [], infos: [], shopRating: 5 };
 
 const App: React.FC = () => {
-  const [storeData, setStoreData] = useState(getDB());
-  const activeRef = useRef(storeData.transactions || []);
-  const historyRef = useRef(storeData.history || []);
-  
-  const saveAndSync = (newData: any) => {
-    const updated = { ...storeData, ...newData };
-    saveDB(updated);
-    setStoreData(updated);
-  };
-  // Firebase Sync Logic (simplified for brevity in source code view)
+  const [storeData, setStoreData] = useState<{ active: Transaction[]; history: Transaction[]; losses: LossRecord[]; products: Product[]; settings: StoreSettings; content: StoreContent; }>({ active: [], history: [], losses: [], products: PRODUCTS, settings: DEFAULT_SETTINGS, content: DEFAULT_CONTENT });
+  const prevTxCountRef = useRef(0);
+  const isFirstLoad = useRef(true);
+
   useEffect(() => {
     const dbRef = ref(db);
-    onValue(dbRef, (snapshot) => {
+    const unsubscribe = onValue(dbRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
-        // Mapping logic...
+        const activeArr = data.transactions ? Object.values(data.transactions) as Transaction[] : [];
+        activeArr.sort((a, b) => b.timestamp - a.timestamp);
+        const historyArr = data.history ? Object.values(data.history) as Transaction[] : [];
+        historyArr.sort((a, b) => b.timestamp - a.timestamp);
+        const lossesArr = data.losses ? Object.values(data.losses) as LossRecord[] : [];
+        lossesArr.sort((a, b) => b.timestamp - a.timestamp);
+        const productsArr = data.products ? Object.values(data.products) as Product[] : PRODUCTS;
+        const settingsObj = data.settings || DEFAULT_SETTINGS;
+        const contentObj = data.content || DEFAULT_CONTENT;
+
+        if (!isFirstLoad.current && activeArr.length > prevTxCountRef.current) { notificationSound.currentTime = 0; notificationSound.play().catch(() => {}); }
+        prevTxCountRef.current = activeArr.length;
+        isFirstLoad.current = false;
+        setStoreData({ active: activeArr, history: historyArr, losses: lossesArr, products: productsArr, settings: settingsObj, content: contentObj });
       }
     });
+    return () => unsubscribe();
   }, []);
+
+  const addTransaction = (tx: Transaction) => { set(ref(db, \`transactions/\${tx.id}\`), tx); };
+  const updateTransactionStatus = (id: string, status: 'confirmed' | 'rejected' | 'cancelled') => {
+      const tx = storeData.active.find(t => t.id === id);
+      if (tx) {
+          const updatedTx = { ...tx, status };
+          const updates: any = {};
+          updates[\`transactions/\${id}\`] = null;
+          updates[\`history/\${id}\`] = updatedTx;
+          update(ref(db), updates);
+      } else {
+          const hTx = storeData.history.find(t => t.id === id);
+          if (hTx) update(ref(db, \`history/\${id}\`), { status });
+      }
+  };
+  const cancelTransaction = (id: string) => { updateTransactionStatus(id, 'cancelled'); };
+  const setProof = (id: string, proofUrl: string) => {
+      const isActive = storeData.active.find(t => t.id === id);
+      if (isActive) update(ref(db, \`transactions/\${id}\`), { proofUrl });
+      else update(ref(db, \`history/\${id}\`), { proofUrl });
+  };
+  const addLoss = (loss: LossRecord) => { set(ref(db, \`losses/\${loss.id}\`), loss); };
+  const saveProductsFn = (newProducts: Product[]) => { const productsMap: Record<string, Product> = {}; newProducts.forEach(p => { productsMap[p.id] = p; }); set(ref(db, 'products'), productsMap); };
+  const saveSettingsFn = (newSettings: StoreSettings) => { set(ref(db, 'settings'), newSettings); };
+  const saveContentFn = (newContent: StoreContent) => { set(ref(db, 'content'), newContent); };
+  const handleAddTestimonial = (testi: Testimonial) => {
+      const currentTestimonials = [...storeData.content.testimonials, testi];
+      const totalRating = currentTestimonials.reduce((sum, item) => sum + item.rating, 0);
+      const newAverage = parseFloat((totalRating / currentTestimonials.length).toFixed(1));
+      const newContent: StoreContent = { ...storeData.content, testimonials: currentTestimonials, shopRating: newAverage };
+      saveContentFn(newContent);
+  };
+  const clearAllData = () => { remove(ref(db, 'transactions')); remove(ref(db, 'history')); remove(ref(db, 'losses')); };
+
+  if (!storeData.settings.storeName) return null; 
 
   return (
     <HashRouter>
       <Routes>
-        <Route path="/" element={<ShopPage addTransaction={()=>{}} cancelTransaction={()=>{}} allTransactions={[]} updateProof={()=>{}} products={storeData.products} settings={storeData.settings} content={storeData.content} onAddTestimonial={()=>{}} />} />
-        <Route path="/admin" element={<AdminDashboard activeTransactions={[]} historyTransactions={[]} losses={[]} products={storeData.products} settings={storeData.settings} content={storeData.content} updateStatus={()=>{}} addLoss={()=>{}} saveProducts={()=>{}} saveSettings={()=>{}} saveContent={()=>{}} clearData={()=>{}} />} />
+        <Route path="/" element={<ShopPage addTransaction={addTransaction} cancelTransaction={cancelTransaction} allTransactions={[...storeData.active, ...storeData.history]} updateProof={setProof} products={storeData.products} settings={storeData.settings} content={storeData.content} onAddTestimonial={handleAddTestimonial} />} />
+        <Route path="/admin" element={<AdminDashboard activeTransactions={storeData.active} historyTransactions={storeData.history} losses={storeData.losses} products={storeData.products} settings={storeData.settings} content={storeData.content} updateStatus={updateTransactionStatus} addLoss={addLoss} saveProducts={saveProductsFn} saveSettings={saveSettingsFn} saveContent={saveContentFn} clearData={clearAllData} />} />
+        <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </HashRouter>
   );
