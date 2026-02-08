@@ -1,8 +1,7 @@
-// @ts-ignore
+// Import Firebase SDK
 import { initializeApp } from "firebase/app";
 import { getDatabase } from "firebase/database";
 
-// Konfigurasi Firebase Real-Time (Sesuai Request User)
 const firebaseConfig = {
   apiKey: "AIzaSyDMwxKKdttuFXp9Hat8veUDJ2N-HuKqDLk",
   authDomain: "fir-9de8f.firebaseapp.com",
@@ -13,6 +12,6 @@ const firebaseConfig = {
   appId: "1:549663941166:android:8737a643adbfebe61cf5bf"
 };
 
-// Initialize Firebase
+// Inisialisasi Firebase
 const app = initializeApp(firebaseConfig);
 export const db = getDatabase(app);
