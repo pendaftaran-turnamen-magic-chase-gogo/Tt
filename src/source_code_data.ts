@@ -19,14 +19,14 @@ export const PROJECT_FILES: Record<string, string> = {
     "preview": "vite preview"
   },
   "dependencies": {
+    "firebase": "^10.8.1",
     "lucide-react": "^0.344.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.22.3",
     "jspdf": "^2.5.1",
     "jspdf-autotable": "^3.8.2",
-    "jszip": "^3.10.1",
-    "firebase": "^10.8.0"
+    "jszip": "^3.10.1"
   },
   "devDependencies": {
     "@types/react": "^18.2.66",
@@ -166,7 +166,8 @@ export const compressImage = (file: File): Promise<string> => {
     }; reader.onerror = (error) => reject(error);
   });
 };`,
-  "src/firebase.ts": `import { initializeApp } from "firebase/app";
+  "src/firebase.ts": `// @ts-ignore
+import { initializeApp } from "firebase/app";
 import { getDatabase } from "firebase/database";
 const firebaseConfig = { apiKey: "AIzaSyDMwxKKdttuFXp9Hat8veUDJ2N-HuKqDLk", authDomain: "fir-9de8f.firebaseapp.com", databaseURL: "https://fir-9de8f-default-rtdb.asia-southeast1.firebasedatabase.app", projectId: "fir-9de8f", storageBucket: "fir-9de8f.firebasestorage.app", messagingSenderId: "549663941166", appId: "1:549663941166:android:8737a643adbfebe61cf5bf" };
 const app = initializeApp(firebaseConfig);
@@ -200,7 +201,10 @@ const App: React.FC = () => {
         historyArr.sort((a, b) => b.timestamp - a.timestamp);
         const lossesArr = data.losses ? Object.values(data.losses) as LossRecord[] : [];
         lossesArr.sort((a, b) => b.timestamp - a.timestamp);
-        const productsArr = data.products ? Object.values(data.products) as Product[] : PRODUCTS;
+        
+        let productsArr: Product[] = PRODUCTS;
+        if (data.products) { productsArr = Array.isArray(data.products) ? data.products : Object.values(data.products); }
+        
         const settingsObj = data.settings || DEFAULT_SETTINGS;
         const contentObj = data.content || DEFAULT_CONTENT;
 
@@ -234,7 +238,7 @@ const App: React.FC = () => {
       else update(ref(db, \`history/\${id}\`), { proofUrl });
   };
   const addLoss = (loss: LossRecord) => { set(ref(db, \`losses/\${loss.id}\`), loss); };
-  const saveProductsFn = (newProducts: Product[]) => { const productsMap: Record<string, Product> = {}; newProducts.forEach(p => { productsMap[p.id] = p; }); set(ref(db, 'products'), productsMap); };
+  const saveProductsFn = (newProducts: Product[]) => { const productsMap: Record<string, Product> = {}; newProducts.forEach(p => { productsMap[\`p_\${p.id}\`] = p; }); set(ref(db, 'products'), productsMap); };
   const saveSettingsFn = (newSettings: StoreSettings) => { set(ref(db, 'settings'), newSettings); };
   const saveContentFn = (newContent: StoreContent) => { set(ref(db, 'content'), newContent); };
   const handleAddTestimonial = (testi: Testimonial) => {

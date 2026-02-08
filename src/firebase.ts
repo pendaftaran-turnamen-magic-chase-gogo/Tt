@@ -2,7 +2,7 @@
 import { initializeApp } from "firebase/app";
 import { getDatabase } from "firebase/database";
 
-// Konfigurasi Firebase dari User
+// Konfigurasi Firebase Real-Time (Sesuai Request User)
 const firebaseConfig = {
   apiKey: "AIzaSyDMwxKKdttuFXp9Hat8veUDJ2N-HuKqDLk",
   authDomain: "fir-9de8f.firebaseapp.com",
